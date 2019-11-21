@@ -1,0 +1,217 @@
+---
+title: 'Unemployment in the US: How to Predict and build a model of it'
+output:
+  pdf_document: default
+  html_notebook: default
+  html_document:
+    df_print: paged
+contributed by: Andrian Hevalo, Yaroslav Halonko
+---
+by Yaroslav Halonko, Andrian Hevalo<br/><br/>
+
+$\textbf{Abstract}$<br/>
+
+Unemploуment mostlу falls during periods of economic stability and rises durіng recessіons, creаtіng sіgnіfісаnt рrеssurе оn publіс fіnanсes аs tаx rеvеnuе fаlls аnd sоcіаl sаfеtу nеt cоsts іnсrеаsе. In this project We are trying to build a model of predicting unemployment rate for further years. Here we will use balanced panel macroeconomic data of the US. Аlthough, our data has only indicators of the US rates, it is divided by quarters. This led us to the idea of checking the differences between them and providing interesting hypothesis testings.<br/><br/>
+$\textbf{Short Contents}$<br/>
+- Visualizing Data<br/>
+- Bulding bunch of models<br/>
+- Checking for correctness of the models & diagnostics (and choosing the best model)<br/>
+- Hypothesis testings<br/>
+- Conclusions<br/><br/>
+
+Packages for installation & Usage <br/>
+Here $\textbf{car}$ package is for scatterplots, $\textbf{gplots, lmtest, tseries}$ packages are for diagnostics of builded models, and $\textbf{plm, foreign}$ packages are for bulding panel data models. 
+```{r}
+#install.packages('plm')
+#install.packages('foreign')
+#install.packages("gplots")
+#install.packages("car")
+library("car")
+library("gplots")
+library('foreign')
+library('plm')
+library("lmtest")
+library("tseries")
+```
+
+
+
+Reading CSV-file. Here we have the US macroeconomic data for the time period of 1950-2000.<br/>
+Silght description of variables:<br/>
+Year = Date<br/>
+Qtr = Quarter<br/>
+Realgdp = Real GDP in the US($bil) <br/>
+Realcons = Real consumption expenditures<br/>
+Realinvs = Real investment by private sector<br/>
+Realgovt = Real government expenditures<br/>
+Realdpi = Real disposable personal income<br/>
+CPI_U = Consumer price index<br/>
+M1 = Nominal money stock<br/>
+Tbilrate = Quarterly average of month end 90 day t bill rate<br/>
+Unemp = $\textbf{Unemployment rate}$ (which we will try to model, our depended variable)<br/>
+Pop = Population, mil. interpolate of year end figures using constant growth rate per quarter<br/>
+Infl = Rate of inflation (first observation is missing)<br/>
+Realint = Ex post real interest rate = Tbilrate - Infl. (First observation missing)<br/>
+```{r}
+UN_data<- read.csv('D:/Rlabs/econ_project/Econometrics_project/TableF5-2.csv')
+head(UN_data)
+```
+
+
+
+##Visualization of given data 
+This is our Depended variable, The unemployment rate (UNEMP) which we will model. As one can see, here we have almost linear change of automatically made model. 
+```{r}
+scatterplot(UNEMP~YEAR|QTR, boxplots=FALSE, smooth=TRUE, data=UN_data)
+```
+
+
+
+Here the data shows us the dynamic change of Unemployment rate in the US. This is a little preview of how this rate changes across quarters. Оbviously, interwal between quarters must be small, but in further discussion we will test some heterogeneity of them.
+```{r}
+coplot(UNEMP ~ YEAR|QTR, type="b", data=UN_data, number = 4)
+detach("package:foreign")
+```
+
+
+
+Here, we can see heterogeneity across years and quarters. Even now it seems that unemployment rate is decreasing during the year. Also, heterogeneity during whole time period is dynamically changing.
+```{r}
+# plotmeans draw a 95% confidence interval around the means
+par(mfrow=c(2,1))
+plotmeans(UNEMP ~ QTR, main="Heterogeineity across Quarters", data=UN_data)
+plotmeans(UNEMP ~ YEAR, main="Heterogeineity across Years", data=UN_data)
+detach("package:gplots")
+```
+
+
+
+##Building models
+OLS Linear Regression
+The first one, and most popular way to predict some changes is to build linear regression model, based on Ordinary least squares method of modelling changes. OLS model will allow us to predict the way of Unemployment change.
+Summary of the model says, all the variables are somehow connected and Adjusted R-squared is very high. Also, residual standard error is small, which is very good. There is also big amount of degrees of freedom.
+```{r}
+ols <- lm(UNEMP~REALGDP + REALCONS + REALINVS + REALGOVT + TBILRATE + REALINT + M1 + CPI_U + POP + INFL, data=UN_data)
+summary(ols)
+```
+
+
+
+Plotting linear model and checking the correctness, leads us to some observations:<br/>
+ - Residuals vs Fitted plot - line is approximately linear. (which is good)<br/> 
+ - Normal Q-Q plot - Distribution is close to Normal. (which is good)<br/>
+ - Scale-Location plot shows that the variance is approximately stable (but a bit increasing) <br/>
+ - Residuals vs Leverage - Our plot doesn’t show any influential cases as all of the cases are within the the dashed Cook’s distance line. <br\>
+ - Linear Plot (the last one) shows that variables are changing linearly.
+```{r error=TRUE}
+plot(ols)
+yhat <- ols$fitted
+scatterplot(yhat~UN_data$UNEMP|QTR, boxplots=FALSE)
+
+```
+
+
+
+Modelling Linear fixed effects regression model<br/> 
+As we are trying to test the same rate across different periods of a year - most probably there is little difference, so FE model is prederred. This is our assumption, and we will test it further. For now: Within Estimator model is performed, summary of this model says:<br/>
+- Now Adjusted R-squared is only ~50%, so it causes us to think of something. <br/> 
+- Real consumption and investment did not played the role, and real GDP has small impact, because we are modelling changes for 4 quarters (and theese variables are left   unchanged across one year) <br/>
+- Also, residual sum of squares got higher.
+```{r}
+model.fe <-plm(UNEMP~ QTR +REALGDP + REALCONS + REALINVS + REALGOVT + TBILRATE + REALINT + M1 + CPI_U + POP + INFL, data = UN_data, model = 'within')
+summary(model.fe)
+```
+
+
+Modelling Linear random effects regression model. <br/>
+RE model is necessarily to check, in case we have panel data. <br/> 
+- Adjusted R-squaredgot bigger<br/>
+- Observing the same proclivity: Consumption, Investment are not important ones. <br/>
+Further we will perform some diagnostics (including Hausman test for stat. significanse) and test, which model is better.
+```{r}
+model.rm <-plm(UNEMP~QTR +REALGDP + REALCONS + REALINVS + REALGOVT + TBILRATE + REALINT + M1 + CPI_U + POP + INFL, data = UN_data, model = 'random')
+summary(model.rm)
+```
+##Diagnostic Tests
+
+Hausman test - The test evaluates the consistency of an estimator when compared to an alternative, less efficient estimator which is already known to be consistent.
+As one can see, the models are statistically significant.
+```{r}
+phtest(model.fe, model.rm)
+```
+
+
+
+A lagrange Multiplier test  is one of three classical approaches to hypothesis testing - model with what effects are better - FE (p-value < 0.05), RE(p-value > 0.05).
+Here, fixed effects model are preffered. 
+```{r}
+#Regular OLS (pooling model) using plm
+pool <- plm(UNEMP ~ REALGDP + REALCONS + REALINVS + REALGOVT + TBILRATE + REALINT + M1 + CPI_U + POP + INFL, data = UN_data, model = 'pool')
+summary(pool)
+plmtest(pool)
+```
+Testing for cross-sectional dependence/contemporaneous correlation:
+using Pasaran CD test 
+and
+Testing for serial correlation
+As one can see,there are no serial correlation, p-value = 0.0118 but there is some cross-sectional dependence between variables. 
+```{r}
+pcdtest(model.fe, test = c("cd"))
+pbgtest(model.fe)
+```
+Testing for unit roots/stationarity
+ Dickey-Fuller Test
+```{r}
+Panel.set <- plm.data(UN_data)
+adf.test(Panel.set$UNEMP, k=2)
+```
+The null hypothesis for the Breusch-Pagan test is homoskedasticity.
+Result: homoskedasticity is in this data.
+```{r}
+bptest(UNEMP ~ REALGDP + REALCONS + REALINVS + REALGOVT + TBILRATE + REALINT + M1 + CPI_U + POP + INFL, data =UN_data, studentize=F)
+```
+
+
+
+Part 2
+##Hypothesis Testing
+Let`s perform t-tests on our models
+```{r}
+
+print("-----Linear Ordinary least Squares Model------")
+coeftest(ols, vcov. = vcovHC, type = "HC1")
+
+print("-----Linear Model with Fixed effects-----")
+coeftest(model.fe, vcov. = vcovHC, type = "HC1")
+
+print("-----Linear Model with Random effects-----")
+coeftest(model.rm, vcov. = vcovHC, type = "HC1")
+
+```
+
+## Last question
+Is it true, that in average, the biggest unemployment rate is at the beggining of the year?
+
+```{r}
+Q1_data = UN_data[which(UN_data$QTR == 1), names(UN_data) %in% c("UNEMP")]
+Q2_data = UN_data[which(UN_data$QTR == 2), names(UN_data) %in% c("UNEMP")]
+Q3_data = UN_data[which(UN_data$QTR == 3), names(UN_data) %in% c("UNEMP")]
+Q4_data = UN_data[which(UN_data$QTR == 4), names(UN_data) %in% c("UNEMP")]
+
+c(mean(Q1_data), "- First Quarter")
+c(mean(Q2_data), "- Second Quarter")
+c(mean(Q3_data), "- Third Quarter")
+c(mean(Q4_data), "- Fourth Quarter")
+
+c(max(c(mean(Q1_data), "- First Quarter"),c(mean(Q2_data), "- Second Quarter"),c(mean(Q3_data), "- Third Quarter"),c(mean(Q4_data), "- Fourth Quarter")), "Maximum")
+if (c(max(c(mean(Q1_data), "- First Quarter"),c(mean(Q2_data), "- Second Quarter"),c(mean(Q3_data), "- Third Quarter"),c(mean(Q4_data), "- Fourth Quarter")), "Maximum")
+==c(mean(Q1_data), "- First Quarter")){
+  print("Yes")} else{ print("No")}
+```
+
+## Conclusions
+This project is forced to show the linear dependence of unemplyment rate, Real GDP in the US dollars, Real disposable personal income, Consumer price index, Nominal money stock, Quarterly average of month end 90 day t bill rate, Pop = Population, Rate of inflation, and real interest rate and to get models for predicting Unemployment rates in next years. Also, we saw that the biggest unemployment rate is, in average at the beginning of the year. This project show the power of regression analysis andthe signifficanse of it`s usage.  
+
+## References
+Data source http://people.stern.nyu.edu/wgreene/Text/Edition7/TableF5-2.txt <br/>
+Understanding Panel data Regression https://towardsdatascience.com/understanding-panel-data-regression-c24cd6c5151e <br/>
